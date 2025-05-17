@@ -29,18 +29,21 @@ async function main() {
         throw new Error('CF_API_TOKEN environment variable is required');
     }
 
-    if (!process.env.CF_RECORD_NAME) {
-        throw new Error('CF_RECORD_NAME environment variable is required');
+    if (!process.env.CF_RECORD_NAME && !process.env.CF_RECORD_ID) {
+        throw new Error('Either CF_RECORD_NAME or CF_RECORD_ID environment variable is required');
     }
 
-    if (!process.env.CF_ZONE_NAME) {
-        throw new Error('CF_ZONE_NAME environment variable is required');
+    if (!process.env.CF_ZONE_NAME && !process.env.CF_ZONE_ID) {
+        throw new Error('Either CF_ZONE_NAME or CF_ZONE_ID environment variable is required');
     }
 
     let recordName = process.env.CF_RECORD_NAME;
-    if (process.env.CF_ZONE_NAME) {
+    let zoneName = process.env.CF_ZONE_NAME;
+
+    // If we have a record name and zone name, validate and fix the record name
+    if (recordName && zoneName) {
         try {
-            recordName = validateAndFixRecordName(recordName, process.env.CF_ZONE_NAME);
+            recordName = validateAndFixRecordName(recordName, zoneName);
             console.log(`Using record name: ${recordName}`);
         } catch (error: unknown) {
             if (error instanceof Error) {
@@ -52,8 +55,17 @@ async function main() {
         }
     }
 
-    const zoneId = await getZoneId(process.env.CF_ZONE_NAME);
-    const recordId = await getRecordId(zoneId, recordName);
+    // Get zone ID either from environment or by looking up the name
+    const zoneId = process.env.CF_ZONE_ID || (zoneName ? await getZoneId(zoneName) : '');
+    if (!zoneId) {
+        throw new Error('Could not determine zone ID');
+    }
+
+    // Get record ID either from environment or by looking up the name
+    const recordId = process.env.CF_RECORD_ID || (recordName ? await getRecordId(zoneId, recordName) : '');
+    if (!recordId) {
+        throw new Error('Could not determine record ID');
+    }
 
     console.log('Starting DNS update service...');
     console.log(`Polling every ${POLL_TIME_IN_MS / 1000} seconds`);
