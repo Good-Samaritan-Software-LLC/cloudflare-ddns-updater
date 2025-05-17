@@ -25,6 +25,38 @@ devices with dynamic IP addresses that need to maintain a consistent DNS record.
 
 - `POLL_TIME_IN_MS`: Time between IP checks in milliseconds (default: 5 minutes)
 
+### Using Environment Files
+
+The application supports loading environment variables from a `.env` file. This
+is particularly useful for Docker deployments.
+
+1. Create a `.env` file in the project root:
+
+```bash
+# Cloudflare API Configuration
+CF_API_TOKEN=your_api_token_here
+
+# Zone Configuration (use either name or ID)
+CF_ZONE_NAME=example.com
+# CF_ZONE_ID=abc123def456
+
+# Record Configuration (use either name or ID)
+CF_RECORD_NAME=www
+# CF_RECORD_ID=xyz789uvw012
+
+# Optional: Polling interval in milliseconds (default: 300000 = 5 minutes)
+POLL_TIME_IN_MS=300000
+```
+
+2. Add `.env` to your `.gitignore` to keep sensitive data out of version
+   control:
+
+```bash
+echo ".env" >> .gitignore
+```
+
+3. When using Docker Compose, the `.env` file will be automatically loaded.
+
 ## Configuration Examples
 
 ### Using Names (Simpler but Slower)
@@ -108,25 +140,21 @@ docker run -d \
 
 ### Docker Compose
 
-Create a `docker-compose.yml` file:
+The project includes a `docker-compose.yml` file that uses environment variables
+from `.env`. To use it:
 
-```yaml
-version: "3"
-services:
-    ddns-updater:
-        build: .
-        environment:
-            - CF_API_TOKEN=your_api_token
-            - CF_ZONE_NAME=example.com
-            - CF_RECORD_NAME=www
-            - POLL_TIME_IN_MS=300000
-        restart: unless-stopped
-```
-
-Then run:
+1. Create your `.env` file as described in the
+   [Environment Files](#using-environment-files) section
+2. Run:
 
 ```bash
 docker-compose up -d
+```
+
+To rebuild the image:
+
+```bash
+docker-compose up -d --build
 ```
 
 ## Performance Tips
