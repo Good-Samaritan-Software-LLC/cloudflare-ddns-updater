@@ -1,88 +1,88 @@
-import fetch from 'node-fetch';
+/**
+ * Cloudflare Dynamic DNS Updater
+ * Copyright (C) 2024 Good Samaritan Software, LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
+ * DISCLAIMER: This software is provided 'as is', without warranty of any kind,
+ * express or implied. All rights not expressly granted are reserved.
+ */
 
-const WAIT_TIME_IN_MS = 10 * 1000;
-
-interface CloudflareResponse {
-    success: boolean;
-    errors?: Array<{
-        code: number;
-        message: string;
-    }>;
-}
-
-interface CloudflareDNSRecord {
-    result: {
-        content: string;
-    };
-}
-
-async function getPublicIP(): Promise<string> {
-    const res = await fetch('http://checkip.dyndns.org/');
-    const body = await res.text();
-    const m = body.match(/Current IP Address: ([\d.]+)/);
-    if (!m) throw new Error('Could not parse public IP');
-    return m[1];
-}
-
-async function getCurrentIP(): Promise<string> {
-    const url = `https://api.cloudflare.com/client/v4/zones/${process.env.CF_ZONE_ID}/dns_records/${process.env.CF_RECORD_ID}`;
-    const res = await fetch(url, {
-        headers: {
-            Authorization: `Bearer ${process.env.CF_API_TOKEN}`,
-            'Content-Type': 'application/json'
-        }
-    });
-    const data = await res.json() as CloudflareResponse & CloudflareDNSRecord;
-    if (!data.success) {
-        console.error('Cloudflare error', data.errors);
-        throw new Error('Failed to get current DNS record');
-    }
-    return data.result.content;
-}
-
-async function updateDNS(ip: string): Promise<void> {
-    const url = `https://api.cloudflare.com/client/v4/zones/${process.env.CF_ZONE_ID}/dns_records/${process.env.CF_RECORD_ID}`;
-    const res = await fetch(url, {
-        method: 'PUT',
-        headers: {
-            Authorization: `Bearer ${process.env.CF_API_TOKEN}`,
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            type: 'A',
-            name: 'charger.cfl.biz',
-            content: ip,
-            ttl: 1,
-            proxied: false
-        })
-    });
-    const data = await res.json() as CloudflareResponse;
-    if (!data.success) {
-        console.error('Cloudflare error', data.errors);
-        throw new Error('Failed to update DNS');
-    }
-}
+import 'dotenv/config';
+import { getZoneId, getRecordId, getCurrentIP, updateDNS } from './services/cloudflare.js';
+import { getPublicIP, validateAndFixRecordName } from './utils/ip.js';
+import { POLL_TIME_IN_MS } from './utils/constants.js';
 
 async function main() {
-    let lastIP = '';
+    if (!process.env.CF_API_TOKEN) {
+        throw new Error('CF_API_TOKEN environment variable is required');
+    }
+
+    if (!process.env.CF_RECORD_NAME) {
+        throw new Error('CF_RECORD_NAME environment variable is required');
+    }
+
+    if (!process.env.CF_ZONE_NAME) {
+        throw new Error('CF_ZONE_NAME environment variable is required');
+    }
+
+    let recordName = process.env.CF_RECORD_NAME;
+    if (process.env.CF_ZONE_NAME) {
+        try {
+            recordName = validateAndFixRecordName(recordName, process.env.CF_ZONE_NAME);
+            console.log(`Using record name: ${recordName}`);
+        } catch (error: unknown) {
+            if (error instanceof Error) {
+                console.error(error.message);
+            } else {
+                console.error('An unknown error occurred while validating record name');
+            }
+            process.exit(1);
+        }
+    }
+
+    const zoneId = await getZoneId(process.env.CF_ZONE_NAME);
+    const recordId = await getRecordId(zoneId, recordName);
+
+    console.log('Starting DNS update service...');
+    console.log(`Polling every ${POLL_TIME_IN_MS / 1000} seconds`);
+
     while (true) {
         try {
             const publicIP = await getPublicIP();
-            const currentIP = await getCurrentIP();
+            const currentIP = await getCurrentIP(zoneId, recordId);
 
             if (publicIP !== currentIP) {
-                await updateDNS(publicIP);
-                console.log(`Updated IP from ${currentIP} to ${publicIP}`);
-                lastIP = publicIP;
+                console.log(`IP changed from ${currentIP} to ${publicIP}`);
+                await updateDNS(zoneId, recordId, publicIP);
+                console.log('DNS record updated successfully');
             } else {
-                console.log(`IP ${publicIP} is already up to date`);
+                console.log(`IP unchanged: ${publicIP}`);
             }
-        } catch (e) {
-            console.error(e);
+        } catch (error: unknown) {
+            if (error instanceof Error) {
+                console.error('Error:', error.message);
+            } else {
+                console.error('An unknown error occurred');
+            }
         }
-        // wait 5 minutes
-        await new Promise(r => setTimeout(r, WAIT_TIME_IN_MS));
+
+        await new Promise(resolve => setTimeout(resolve, POLL_TIME_IN_MS));
     }
 }
 
-main().catch(console.error);
+main().catch(error => {
+    console.error('Fatal error:', error);
+    process.exit(1);
+});
