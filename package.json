@@ -1,0 +1,10 @@
+{
+  "name": "ddnsupdater",
+  "version": "1.0.0",
+  "description": "Updates the charger.cfl.biz DNS with current public IP",
+  "main": "index.js",
+  "repository": "https://github.com/Good-Samaritan-Software-LLC/ddnsupdater.git",
+  "author": "Good Samaritan Software, LLC",
+  "license": "None",
+  "private": true
+}
