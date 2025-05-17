@@ -26,7 +26,11 @@ export async function getPublicIP(): Promise<string> {
     const res = await fetch(IP_CHECK_URL);
     const body = await res.text();
     const m = body.match(/Current IP Address: ([\d.]+)/);
-    if (!m) throw new Error('Could not parse public IP');
+    if (!m) {
+        console.log(body);
+        console.error('Could not parse public IP');
+        return '';
+    }
     return m[1];
 }
 
