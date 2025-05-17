@@ -6,5 +6,18 @@
   "repository": "https://github.com/Good-Samaritan-Software-LLC/ddnsupdater.git",
   "author": "Good Samaritan Software, LLC",
   "license": "None",
-  "private": true
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/dynamic-dns.js",
+    "dev": "ts-node src/dynamic-dns.ts"
+  },
+  "dependencies": {
+    "@types/node": "^22.15.18",
+    "@types/node-fetch": "^2.6.12",
+    "dotenv": "^16.5.0",
+    "node-fetch": "^3.3.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
+  }
 }

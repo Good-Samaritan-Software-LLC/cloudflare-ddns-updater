@@ -3,15 +3,20 @@ FROM node:22-alpine AS base
 # build stage
 FROM base AS builder
 WORKDIR /app
-COPY package.json package-lock.json tsconfig.json ./
-RUN npm ci
+COPY package.json yarn.lock tsconfig.json ./
+RUN yarn install
 COPY src ./src
-RUN npm run build
+RUN yarn build
 
 # runtime stage
 FROM base AS runtime
 WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci --production
+COPY package.json yarn.lock ./
+RUN yarn install --production
 COPY --from=builder /app/dist ./dist
-CMD ["node", "dist/dynamic-dns.js"]
+
+# Set environment variables
+ENV NODE_ENV=production
+
+# Run the application
+CMD ["node", "dist/index.js"]
