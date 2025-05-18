@@ -24,64 +24,105 @@ import { getZoneId, getRecordId, getCurrentIP, updateDNS } from './services/clou
 import { getPublicIP, validateAndFixRecordName } from './utils/ip.js';
 import { POLL_TIME_IN_MS } from './utils/constants.js';
 
-async function main() {
+interface DNSRecord {
+    recordName: string;
+    zoneName: string;
+    zoneId: string;
+    recordId: string;
+}
+
+async function initializeDNSRecords(): Promise<DNSRecord[]> {
     if (!process.env.CF_API_TOKEN) {
         throw new Error('CF_API_TOKEN environment variable is required');
     }
 
-    if (!process.env.CF_RECORD_NAME && !process.env.CF_RECORD_ID) {
-        throw new Error('Either CF_RECORD_NAME or CF_RECORD_ID environment variable is required');
+    if (!process.env.CF_RECORD_NAMES) {
+        throw new Error('CF_RECORD_NAMES environment variable is required (comma-separated list of record names)');
     }
 
-    if (!process.env.CF_ZONE_NAME && !process.env.CF_ZONE_ID) {
-        throw new Error('Either CF_ZONE_NAME or CF_ZONE_ID environment variable is required');
-    }
+    const recordNames = process.env.CF_RECORD_NAMES.split(',').map(name => name.trim());
+    const dnsRecords: DNSRecord[] = [];
 
-    let recordName = process.env.CF_RECORD_NAME;
-    let zoneName = process.env.CF_ZONE_NAME;
+    for (const recordName of recordNames) {
+        // For root records (e.g., nomnotes.app), use the entire domain as both record and zone name
+        // For subdomains (e.g., sub.example.com), extract the zone name from the last two parts
+        const parts = recordName.split('.');
+        if (parts.length < 2) {
+            throw new Error(`Invalid record name format: ${recordName}`);
+        }
 
-    // If we have a record name and zone name, validate and fix the record name
-    if (recordName && zoneName) {
+        // If it's a root record (e.g., nomnotes.app), use the entire domain as zone name
+        // If it's a subdomain (e.g., sub.example.com), use the last two parts
+        const zoneName = parts.length === 2 ? recordName : parts.slice(-2).join('.');
+
         try {
-            recordName = validateAndFixRecordName(recordName, zoneName);
-            console.log(`Using record name: ${recordName}`);
+            const validatedRecordName = validateAndFixRecordName(recordName, zoneName);
+            console.log(`Using record name: ${validatedRecordName}`);
+
+            const zoneId = await getZoneId(zoneName);
+            if (!zoneId) {
+                throw new Error(`Could not find zone ID for ${zoneName}`);
+            }
+
+            const recordId = await getRecordId(zoneId, validatedRecordName);
+            if (!recordId) {
+                throw new Error(`Could not find record ID for ${validatedRecordName}`);
+            }
+
+            dnsRecords.push({
+                recordName: validatedRecordName,
+                zoneName,
+                zoneId,
+                recordId
+            });
         } catch (error: unknown) {
             if (error instanceof Error) {
-                console.error(error.message);
+                console.error(`Error initializing record ${recordName}:`, error.message);
             } else {
-                console.error('An unknown error occurred while validating record name');
+                console.error(`An unknown error occurred while initializing record ${recordName}`);
             }
             process.exit(1);
         }
     }
 
-    // Get zone ID either from environment or by looking up the name
-    const zoneId = process.env.CF_ZONE_ID || (zoneName ? await getZoneId(zoneName) : '');
-    if (!zoneId) {
-        throw new Error('Could not determine zone ID');
-    }
+    return dnsRecords;
+}
 
-    // Get record ID either from environment or by looking up the name
-    const recordId = process.env.CF_RECORD_ID || (recordName ? await getRecordId(zoneId, recordName) : '');
-    if (!recordId) {
-        throw new Error('Could not determine record ID');
-    }
+async function updateDNSRecords(dnsRecords: DNSRecord[], publicIP: string) {
+    const updatePromises = dnsRecords.map(async (record) => {
+        try {
+            const currentIP = await getCurrentIP(record.zoneId, record.recordId);
+
+            if (publicIP !== currentIP) {
+                console.log(`IP changed for ${record.recordName} from ${currentIP} to ${publicIP}`);
+                await updateDNS(record.zoneId, record.recordId, publicIP);
+                console.log(`DNS record ${record.recordName} updated successfully`);
+            } else {
+                console.log(`IP unchanged for ${record.recordName}: ${publicIP}`);
+            }
+        } catch (error: unknown) {
+            if (error instanceof Error) {
+                console.error(`Error updating ${record.recordName}:`, error.message);
+            } else {
+                console.error(`An unknown error occurred while updating ${record.recordName}`);
+            }
+        }
+    });
+
+    await Promise.all(updatePromises);
+}
+
+async function main() {
+    const dnsRecords = await initializeDNSRecords();
 
     console.log('Starting DNS update service...');
     console.log(`Polling every ${POLL_TIME_IN_MS / 1000} seconds`);
+    console.log(`Monitoring ${dnsRecords.length} DNS records`);
 
     while (true) {
         try {
             const publicIP = await getPublicIP();
-            const currentIP = await getCurrentIP(zoneId, recordId);
-
-            if (publicIP !== currentIP) {
-                console.log(`IP changed from ${currentIP} to ${publicIP}`);
-                await updateDNS(zoneId, recordId, publicIP);
-                console.log('DNS record updated successfully');
-            } else {
-                console.log(`IP unchanged: ${publicIP}`);
-            }
+            await updateDNSRecords(dnsRecords, publicIP);
         } catch (error: unknown) {
             if (error instanceof Error) {
                 console.error('Error:', error.message);
