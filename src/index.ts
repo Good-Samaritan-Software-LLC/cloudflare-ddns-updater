@@ -95,7 +95,7 @@ async function updateDNSRecords(dnsRecords: DNSRecord[], publicIP: string) {
 
             if (publicIP !== currentIP) {
                 console.log(`IP changed for ${record.recordName} from ${currentIP} to ${publicIP}`);
-                await updateDNS(record.zoneId, record.recordId, publicIP);
+                await updateDNS(record.zoneId, record.recordId, record.recordName, publicIP);
                 console.log(`DNS record ${record.recordName} updated successfully`);
             } else {
                 console.log(`IP unchanged for ${record.recordName}: ${publicIP}`);

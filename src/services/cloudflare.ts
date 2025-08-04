@@ -22,10 +22,66 @@
 import fetch, { RequestInit, Response } from 'node-fetch';
 import { CloudflareResponse, CloudflareDNSRecord, CloudflareZone, CloudflareDNSRecords } from '../types/index.js';
 import { CLOUDFLARE_API_BASE, CLOUDFLARE_API_HEADERS, DNS_RECORD_TYPE, DNS_RECORD_TTL, DNS_RECORD_PROXIED } from '../utils/constants.js';
+import { promises as fs } from 'fs';
+import path from 'path';
 
 // Cache for zone and record IDs using Maps
 const zoneIdCache = new Map<string, string>();
 const recordIdCache = new Map<string, string>();
+
+// Cache file path
+const CACHE_DIR = '.cache';
+const CACHE_FILE = path.join(CACHE_DIR, 'ddns-cache.json');
+
+interface CacheData {
+    zones: Record<string, string>;
+    records: Record<string, string>;
+}
+
+// Load cache from disk
+async function loadCache(): Promise<void> {
+    try {
+        const data = await fs.readFile(CACHE_FILE, 'utf8');
+        const cache: CacheData = JSON.parse(data);
+        
+        // Load zones into cache
+        Object.entries(cache.zones || {}).forEach(([name, id]) => {
+            zoneIdCache.set(name, id);
+        });
+        
+        // Load records into cache
+        Object.entries(cache.records || {}).forEach(([key, id]) => {
+            recordIdCache.set(key, id);
+        });
+        
+        console.log(`Loaded cache with ${zoneIdCache.size} zones and ${recordIdCache.size} records`);
+    } catch (error) {
+        // Cache file doesn't exist or is invalid, that's okay
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+            console.warn('Failed to load cache:', error);
+        }
+    }
+}
+
+// Save cache to disk
+async function saveCache(): Promise<void> {
+    try {
+        // Ensure cache directory exists
+        await fs.mkdir(CACHE_DIR, { recursive: true });
+        
+        const cache: CacheData = {
+            zones: Object.fromEntries(zoneIdCache),
+            records: Object.fromEntries(recordIdCache)
+        };
+        
+        await fs.writeFile(CACHE_FILE, JSON.stringify(cache, null, 2));
+    } catch (error) {
+        console.error('Failed to save cache:', error);
+    }
+}
+
+// Initialize cache on module load
+loadCache().catch(() => {});
 
 // Rate limiting configuration
 const RATE_LIMIT_WINDOW = 5 * 60 * 1000; // 5 minutes in milliseconds
@@ -122,11 +178,10 @@ export async function getZoneId(zoneName: string): Promise<string> {
         throw new Error(`Zone ${zoneName} not found`);
     }
 
-    console.warn(`\n⚠️  Warning: Zone ID looked up for "${zoneName}".`);
-    console.warn(`   For better performance, set CF_ZONE_ID=${zone.id} in your configuration.\n`);
-
-    // Cache the zone ID
+    // Cache the zone ID and save to disk
     zoneIdCache.set(zoneName, zone.id);
+    await saveCache();
+    
     return zone.id;
 }
 
@@ -163,11 +218,10 @@ export async function getRecordId(zoneId: string, recordName: string): Promise<s
         throw new Error(`${DNS_RECORD_TYPE} record ${recordName} not found in zone ${zoneId}`);
     }
 
-    console.warn(`\n⚠️  Warning: Record ID looked up for "${recordName}".`);
-    console.warn(`   For better performance, set CF_RECORD_ID=${record.id} in your configuration.\n`);
-
-    // Cache the record ID
+    // Cache the record ID and save to disk
     recordIdCache.set(cacheKey, record.id);
+    await saveCache();
+    
     return record.id;
 }
 
@@ -187,7 +241,7 @@ export async function getCurrentIP(zoneId: string, recordId: string): Promise<st
     return data.result.content;
 }
 
-export async function updateDNS(zoneId: string, recordId: string, ip: string): Promise<void> {
+export async function updateDNS(zoneId: string, recordId: string, recordName: string, ip: string): Promise<void> {
     const url = `${CLOUDFLARE_API_BASE}/zones/${zoneId}/dns_records/${recordId}`;
     const res = await makeRequest(url, {
         method: 'PUT',
@@ -197,7 +251,7 @@ export async function updateDNS(zoneId: string, recordId: string, ip: string): P
         },
         body: JSON.stringify({
             type: DNS_RECORD_TYPE,
-            name: process.env.CF_RECORD_NAME,
+            name: recordName,
             content: ip,
             ttl: DNS_RECORD_TTL,
             proxied: DNS_RECORD_PROXIED
