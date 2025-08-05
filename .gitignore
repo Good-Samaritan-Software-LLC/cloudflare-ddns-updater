@@ -134,3 +134,9 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# Executables
+ddns-updater.exe
+ddns-updater-win.exe
+ddns-updater-mac
+ddns-updater-linux

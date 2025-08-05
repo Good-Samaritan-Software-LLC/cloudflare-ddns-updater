@@ -104,6 +104,39 @@ For development with automatic reloading:
 yarn dev
 ```
 
+## Building Self-Contained Executables
+
+You can build standalone executables that don't require Node.js to be installed:
+
+### Build for current platform (Windows):
+```bash
+yarn build:exe
+```
+
+### Build for all platforms:
+```bash
+yarn build:exe:all
+```
+
+### Build for specific platforms:
+```bash
+# Windows
+yarn build:exe:win
+
+# macOS
+yarn build:exe:mac
+
+# Linux
+yarn build:exe:linux
+```
+
+The executables will be created in the project root:
+- Windows: `ddns-updater-win.exe`
+- macOS: `ddns-updater-mac`
+- Linux: `ddns-updater-linux`
+
+These executables are fully self-contained and include the Node.js runtime, so they can run on systems without Node.js installed.
+
 ## Docker Usage
 
 ### Building the Image

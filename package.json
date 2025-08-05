@@ -11,7 +11,12 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "node --no-warnings --loader ts-node/esm src/index.ts"
+    "dev": "node --no-warnings --loader ts-node/esm src/index.ts",
+    "build:exe": "yarn build && nexe dist/index.js -t windows-x64-18.0.0 -o ddns-updater.exe",
+    "build:exe:all": "yarn build && yarn build:exe:win && yarn build:exe:mac && yarn build:exe:linux",
+    "build:exe:win": "nexe dist/index.js -t windows-x64-18.0.0 -o ddns-updater-win.exe",
+    "build:exe:mac": "nexe dist/index.js -t darwin-x64-18.0.0 -o ddns-updater-mac",
+    "build:exe:linux": "nexe dist/index.js -t linux-x64-18.0.0 -o ddns-updater-linux"
   },
   "dependencies": {
     "@types/node": "^20.11.24",
@@ -35,5 +40,8 @@
     "url": "https://github.com/Good-Samaritan-Software-LLC/ddnsupdater/issues"
   },
   "homepage": "https://github.com/Good-Samaritan-Software-LLC/ddnsupdater#readme",
-  "disclaimer": "This software is provided 'as is', without warranty of any kind, express or implied. All rights not expressly granted are reserved."
+  "disclaimer": "This software is provided 'as is', without warranty of any kind, express or implied. All rights not expressly granted are reserved.",
+  "devDependencies": {
+    "nexe": "^5.0.0-beta.4"
+  }
 }
